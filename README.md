@@ -1,4 +1,6 @@
-# cs5100_FinalProject
-Pacman Capture the Flag project for CS5100/CS4100 Foundations of Artificial Intelligence
+# Final Project for Neu's CS4100/CS5100 - Foundations of Artifical Intelligence
+## Spring 2021
 
-Contributor: Jeremy Kim, Georgy Chmel, Riley Grant
+Contributors: Jeremy Kim, Georgy Chmel, Riley Grant
+
+This is our group's submission for the capture the flag contest.
