@@ -25,7 +25,8 @@ import math
 #################
 
 def createTeam(firstIndex, secondIndex, isRed,
-               first='DummyAgent', second='DummyAgent'):
+               first='OffensiveReflexAgent', second='DefensiveReflexAgent'):
+    #  first='DummyAgent', second='DummyAgent'):
     """
   This function should return a list of two agents that will form the
   team, initialized using firstIndex and secondIndex as their agent
@@ -114,8 +115,10 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
         # have if statements to override the monte-carlo's choice
         
         def evaluate(MCNode):
-            
-            
+            features = self.getFeatures(gameState, action)
+            weights = self.getWeights(gameState, action)
+            return features * weights
+
         mctsNode = MCTS( MCNode( gameState, self.index, None, evaluate))
         return mctsNode.action
         #return random.choice(actions)
@@ -129,6 +132,9 @@ class DefensiveReflexAgent(ReflexCaptureAgent):
     def chooseAction(self, gameState):
         # have if statements to override the monte-carlo's choice
         def evaluate(MCNode):
+            features = self.getFeatures(gameState, action)
+            weights = self.getWeights(gameState, action)
+            return features * weights
 
         mctsNode = MCTS( MCNode( gameState, self.index, None, evaluate ))
         return mctsNode.action
@@ -234,7 +240,7 @@ def rollout(MCNode):
     currentNode = MCNode
     while not currentNode.isTerminal():
         currentNode = rollout_policy(currentNode)
-    return self.evaluate(currentNode)
+    return MCNode.evaluate(currentNode)
 
 
 def rollout_policy(MCNode):

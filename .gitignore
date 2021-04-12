@@ -1,4 +1,4 @@
 # ignore files for the pacman capture the flag project
 .DS_Store
 .idea
-.venv
+venv/
