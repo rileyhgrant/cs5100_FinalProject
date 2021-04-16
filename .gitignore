@@ -2,3 +2,6 @@
 .DS_Store
 .idea
 venv/
+.flooignore
+.floo
+workspace.xml

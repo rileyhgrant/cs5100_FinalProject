@@ -119,7 +119,10 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
             weights = self.getWeights(gameState, action)
             return features * weights
 
-        mctsNode = MCTS( MCNode( gameState, self.index, None, evaluate))
+        node = MCNode( gameState, self.index, None, evaluate)
+        print( "offense ahhhh", node )
+        mctsNode = MCTS( node )
+        # mctsNode = MCTS( MCNode( gameState, self.index, None, evaluate))
         return mctsNode.action
         #return random.choice(actions)
 
@@ -136,7 +139,10 @@ class DefensiveReflexAgent(ReflexCaptureAgent):
             weights = self.getWeights(gameState, action)
             return features * weights
 
-        mctsNode = MCTS( MCNode( gameState, self.index, None, evaluate ))
+        node = MCNode(gameState, self.index, None, evaluate)
+        print("defense ahhhh", node)
+        mctsNode = MCTS(node)
+        # mctsNode = MCTS( MCNode( gameState, self.index, None, evaluate))
         return mctsNode.action
         #return random.choice(actions)
 
@@ -154,7 +160,7 @@ class MCNode():
         self.numGames = 0
         self.gameState = gameState
         self.parent = None
-        self.children = list()  # list of MCNodes
+        self.children = list()  # list of MCNodes TODO: NEED TO ACTUALLY GIVE CHILDREN
         self.isEnemy = False
         self.index = index
         self.action = action
@@ -173,6 +179,7 @@ class MCNode():
     def getNodeWithBestUCT(self):
         chosenNode = None
         maxUCT = -1000000
+        # TODO: Problem is this bad larry has no children
         for child in self.children:
             if child.getUCT() > maxUCT:
                 maxUCT = child.getUCT()
@@ -199,9 +206,13 @@ class MCNode():
                 successor = MCNode(gameState, gameState.getIndex(), action)
             return successor
 
+    def type(self):
+        return "mcnode"
+
 
 def MCTS(MCNode):
     start = time.time()
+    print( "line 211, MCNode: ", MCNode, MCNode.type() )
     while 3000 > (time.time() - start) * 1000:  # resources remaining (time) 3s
         leaf = search(MCNode)
         result = rollout(leaf)
@@ -223,8 +234,12 @@ def best_child(MCNode):
 
 def search(MCNode):
     currentNode = MCNode
+    print( "line 211, MCNode: ", MCNode, MCNode.type() )
+    print( "line 211, currentNode: ", currentNode, currentNode.type() )
     while currentNode.isFullyExpanded():
+        print( 'ran once' )
         currentNode = currentNode.getNodeWithBestUCT()
+        print( currentNode )
 
     if currentNode.hasChildren():
         for child in currentNode.children:
