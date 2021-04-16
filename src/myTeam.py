@@ -25,7 +25,7 @@ import math
 #################
 
 def createTeam(firstIndex, secondIndex, isRed,
-               first='OffensiveReflexAgent', second='DefensiveReflexAgent'):
+               first='OffensiveReflexAgent', second='OffensiveReflexAgent'):
     #  first='DummyAgent', second='DummyAgent'):
     """
   This function should return a list of two agents that will form the
@@ -112,19 +112,49 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
         CaptureAgent.registerInitialState(self, gameState)
 
     def chooseAction(self, gameState):
+        agentState = gameState.getAgentState(self.index)
+
+        # just move towards closest food while in base
+        if not agentState.isPacman:
+            currentPos = gameState.getAgentPosition(self.index)
+            foodList = self.getFood(gameState).asList()
+            closestFoodPos = None
+            minFoodDist = 1000000
+            for foodPos in foodList:
+                foodDist = self.getMazeDistance(currentPos, foodPos)
+                if foodDist < minFoodDist:
+                    minFoodDist = foodDist
+                    closestFoodPos = foodPos
+
+            chosenAction = None
+            minDist = 1000000
+            actions = gameState.getLegalActions(self.index)
+            for action in actions:
+                nextPos = gameState.generateSuccessor(self.index, action).getAgentPosition(self.index)
+                dist = self.getMazeDistance(nextPos, closestFoodPos)
+                if dist < minDist:
+                    minDist = dist
+                    chosenAction = action
+
+        # if on enemy's side, do MCTS
+        else:
+            root = MCNode(gameState, None, None, self.index)
+            chosenAction = MCTS(root)
+
+
+        return chosenAction
+
         # have if statements to override the monte-carlo's choice
-        
+        """
         def evaluate(MCNode):
             features = self.getFeatures(gameState, action)
             weights = self.getWeights(gameState, action)
             return features * weights
 
-        node = MCNode( gameState, self.index, None, evaluate)
-        print( "offense ahhhh", node )
-        mctsNode = MCTS( node )
-        # mctsNode = MCTS( MCNode( gameState, self.index, None, evaluate))
+        mctsNode = MCTS( MCNode( gameState, self.index, None, evaluate))
         return mctsNode.action
         #return random.choice(actions)
+        """
 
 
 class DefensiveReflexAgent(ReflexCaptureAgent):
@@ -139,12 +169,9 @@ class DefensiveReflexAgent(ReflexCaptureAgent):
             weights = self.getWeights(gameState, action)
             return features * weights
 
-        node = MCNode(gameState, self.index, None, evaluate)
-        print("defense ahhhh", node)
-        mctsNode = MCTS(node)
-        # mctsNode = MCTS( MCNode( gameState, self.index, None, evaluate))
+        mctsNode = MCTS(MCNode(gameState, self.index, None, evaluate))
         return mctsNode.action
-        #return random.choice(actions)
+        # return random.choice(actions)
 
 
 # https://www.geeksforgeeks.org/ml-monte-carlo-tree-search-mcts/
@@ -155,18 +182,22 @@ Class to represent the Monte Carlo Tree Node and its children
 
 
 class MCNode():
-    def __init__(self, gameState, index, action, evaluate):
-        self.numWins = 0
+    def __init__(self, gameState, parent, action, index):
+        # self.numWins = 0
+        self.avgScore = 0
         self.numGames = 0
         self.gameState = gameState
-        self.parent = None
-        self.children = list()  # list of MCNodes TODO: NEED TO ACTUALLY GIVE CHILDREN
-        self.isEnemy = False
+        self.parent = parent
+        self.children = list()  # list of MCNodes
+        # self.isEnemy = False
         self.index = index
         self.action = action
-        self.evaluate = evaluate
+        # self.evaluate = evaluate
 
     def isFullyExpanded(self):
+        if len(self.children) == 0:  # added
+            return False  # added
+
         for child in self.children:
             if not child.visited():
                 return False
@@ -177,9 +208,13 @@ class MCNode():
         return self.numGames > 0
 
     def getNodeWithBestUCT(self):
+        nextIndex = (self.index + 1) % 4
+        isInvisible = self.gameState.getAgentPosition( nextIndex ) is None
+        if isInvisible:
+            return None
+
         chosenNode = None
         maxUCT = -1000000
-        # TODO: Problem is this bad larry has no children
         for child in self.children:
             if child.getUCT() > maxUCT:
                 maxUCT = child.getUCT()
@@ -189,87 +224,141 @@ class MCNode():
 
     def getUCT(self):
         exploreParam = math.sqrt(2)
-        return self.numWins / self.numGames + exploreParam * math.sqrt(math.log(self.parent.numGames) / self.numGames)
+        # TODO: how to use avgScore instead of numWins in this formula
+        return self.avgScore * self.numGames + exploreParam * math.sqrt(math.log(self.parent.numGames) / self.numGames)
 
     def hasChildren(self):
         return len(self.children) != 0
 
+    def getUnusedActions(self):
+        actions = self.gameState.getLegalActions(self.index)
+        for child in self.children:
+            if child.action in actions:
+                actions.remove(child.action)
+
+        return actions
+
     def generateSuccessor(self):
-        if self.isFullyExpanded():
-            return random.choice(self.children)
+        #if self.isFullyExpanded():
+        #    print("Program shouldn't reach here")
+        #    return random.choice(self.children)
+        #else:
+        print("index is: ", self.index)
+        print("gameState is: ", self.gameState)
+        print("indices are: ", self.gameState.getRedTeamIndices(), self.gameState.getBlueTeamIndices())
+        if self.gameState.getAgentPosition( self.index ) is None:
+            action = Directions.STOP
         else:
-            gameState = self.gameState.generateSuccessor(self.index, Directions.STOP)
-            successor = MCNode(gameState, gameState.getIndex(), Directions.STOP)
-            while not self.children.__contains__(successor):
-                action = random.choice(self.gameState.getLegalActions(self.index))
-                gameState = self.gameState.generateSuccessor(self.index, action)
-                successor = MCNode(gameState, gameState.getIndex(), action)
-            return successor
+            actions = self.gameState.getLegalActions(self.index)
+            action = random.choice(actions)
 
-    def type(self):
-        return "mcnode"
+        nextState = self.gameState.generateSuccessor(self.index, action)
+        newIndex = (self.index + 1) % 4
+        successor = MCNode(nextState, self, action, newIndex)
+
+            # while not self.children.__contains__(successor):
+            #    action = random.choice(self.gameState.getLegalActions(self.index))
+            #    nextState = self.gameState.generateSuccessor(self.index, action)
+            #    successor = MCNode(nextState, nextState.getIndex(), action)
+        return successor
 
 
-def MCTS(MCNode):
+def MCTS(node):
     start = time.time()
-    print( "line 211, MCNode: ", MCNode, MCNode.type() )
-    while 3000 > (time.time() - start) * 1000:  # resources remaining (time) 3s
-        leaf = search(MCNode)
-        result = rollout(leaf)
-        backpropagate(MCNode, result)
+    while 0.5 > (time.time() - start):  # modified
+        print("Node is: ", node)
+        leaf = search(node)
+        if leaf is None:
+            # TODO continue search? move towards closest dot?
+            print("Leaf is None")
+            return random.choice(node.gameState.getLegalActions(node.index))
+        simNode = expand(leaf)
+        # something = simNode
+        # print(something.numWins, something.numGames, something.parent, something.action)
+        resultScore = rollout(simNode)
+        # print(resultScore)
+        backpropagate(simNode, resultScore)
 
-    return best_child(MCNode)
+    bestChild = best_child(node)
+    print("BEST ACTION IS: ", bestChild.action)
+    return bestChild.action
+    # return None
 
 
-def best_child(MCNode):
-    maxWinrate = 0
+def best_child(node):
+    isRed = node.gameState.isOnRedTeam( node.index )
+
+
+    # maxWinrate = 0
+    maxVisits = -1000000  # added
     bestChild = None
-    for child in MCNode.children:
-        winrate = child.numWins / child.numGames
-        if winrate > maxWinrate:
-            bestChild = child
+    for child in node.children:
+        # winrate = child.numWins / child.numGames
+        # if winrate > maxWinrate:
+        #    maxWinrate = winrate
+        #    bestChild = child
+
+        if child.numGames > maxVisits:  # added
+            maxVisits = child.numGames  # added
+            bestChild = child  # added
+
+    print( "\n===============")
+    print( "RETURNING BEST CHILD: ",  bestChild, "\n")
     return bestChild
 
 
-
-def search(MCNode):
-    currentNode = MCNode
-    print( "line 211, MCNode: ", MCNode, MCNode.type() )
-    print( "line 211, currentNode: ", currentNode, currentNode.type() )
-    while currentNode.isFullyExpanded():
-        print( 'ran once' )
+def search(node):
+    currentNode = node
+    while currentNode is not None and currentNode.isFullyExpanded():
         currentNode = currentNode.getNodeWithBestUCT()
-        print( currentNode )
 
-    if currentNode.hasChildren():
-        for child in currentNode.children:
-            if not child.visited:
-                return child
-    else:
-        return currentNode
+
+    return currentNode
+
+
+def expand(node):  # added
+    actions = node.getUnusedActions()
+    print(actions)
+    chosenAction = random.choice(actions)
+    nextState = node.gameState.generateSuccessor(node.index, chosenAction)
+
+    newIndex = ( node.index + 1 ) % 4
+    chosenChild = MCNode(nextState, node, chosenAction, newIndex)  # change this to enemy index
+    node.children.append(chosenChild)
+
+    return chosenChild
 
 
 # keep choosing random actions until an end state is reached
-def rollout(MCNode):
+def rollout(node):
     # potentially add depth parameter if time is an issue
-    currentNode = MCNode
-    while not currentNode.isTerminal():
+    currentNode = node
+    for i in range(100):
         currentNode = rollout_policy(currentNode)
-    return MCNode.evaluate(currentNode)
+        print(i, currentNode.index)
+        #i+=1
+    #while not currentNode.isTerminal():
+    #    currentNode = rollout_policy(currentNode)
+    #return node.evaluate(currentNode)
+    return currentNode.gameState.getScore()
 
-
-def rollout_policy(MCNode):
-    return MCNode.generateSuccessor()
+def rollout_policy(node):
+    if node.gameState.getAgentPosition(node.index) is None:
+        newNode = MCNode( node.gameState, node, Directions.STOP, (node.index + 1) % 4) # does the action matter?
+        return newNode
+    else:
+        return node.generateSuccessor()
+    #return node.generateSuccessor()
 
 
 #
-def backpropagate(MCNode, result):
-    isEnemyWin = result < 0
-    currentNode = MCNode
+def backpropagate(node, result):
+    currentNode = node
     while currentNode is not None:
-        currentNode.numPlays += 1
-        if (currentNode.isEnemy == isEnemyWin):
-            currentNode.numWins += 1
+        currSum = currentNode.avgScore * currentNode.numGames
+        newSum = currSum + result
+        currentNode.numGames = currentNode.numGames + 1
+        currentNode.avgScore = newSum / currentNode.numGames
 
         # set node to parent to keep looping
         currentNode = currentNode.parent
