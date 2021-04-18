@@ -138,7 +138,10 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
 
         # if on enemy's side, do MCTS
         else:
-            root = MCNode(gameState, None, None, self.index)
+            visibleIndices = self.getVisibleEnemyIndices(gameState)
+            visibleIndices.insert(0, self.index) #add teammates or no?
+
+            root = MCNode(gameState, None, None, self.index, visibleIndices)
             chosenAction = MCTS(root)
 
 
@@ -155,6 +158,19 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
         return mctsNode.action
         #return random.choice(actions)
         """
+
+    def getVisibleEnemyIndices(self, gameState):
+        if gameState.isOnRedTeam(self.index):
+            enemyIndices = gameState.getBlueTeamIndices()
+        else:
+            enemyIndices = gameState.getRedTeamIndices()
+
+        visibleEnemyIndices = list()
+        for enemyIndex in enemyIndices:
+            if gameState.getAgentPosition(enemyIndex) is not None:
+                visibleEnemyIndices.append(enemyIndex)
+
+        return visibleEnemyIndices
 
 
 class DefensiveReflexAgent(ReflexCaptureAgent):
@@ -182,9 +198,9 @@ Class to represent the Monte Carlo Tree Node and its children
 
 
 class MCNode():
-    def __init__(self, gameState, parent, action, index):
+    def __init__(self, gameState, parent, action, index, visibleAgentIndices):
         # self.numWins = 0
-        self.avgScore = 0
+        self.avgScore = 0.0
         self.numGames = 0
         self.gameState = gameState
         self.parent = parent
@@ -193,6 +209,7 @@ class MCNode():
         self.index = index
         self.action = action
         # self.evaluate = evaluate
+        self.visibleAgentIndices = visibleAgentIndices
 
     def isFullyExpanded(self):
         if len(self.children) == 0:  # added
@@ -208,10 +225,10 @@ class MCNode():
         return self.numGames > 0
 
     def getNodeWithBestUCT(self):
-        nextIndex = (self.index + 1) % 4
-        isInvisible = self.gameState.getAgentPosition( nextIndex ) is None
-        if isInvisible:
-            return None
+        #nextIndex = (self.index + 1) % 4
+        #isInvisible = self.gameState.getAgentPosition( nextIndex ) is None
+        #if isInvisible:
+        #    return None
 
         chosenNode = None
         maxUCT = -1000000
@@ -243,40 +260,46 @@ class MCNode():
         #    print("Program shouldn't reach here")
         #    return random.choice(self.children)
         #else:
-        print("index is: ", self.index)
-        print("gameState is: ", self.gameState)
-        print("indices are: ", self.gameState.getRedTeamIndices(), self.gameState.getBlueTeamIndices())
-        if self.gameState.getAgentPosition( self.index ) is None:
-            action = Directions.STOP
-        else:
-            actions = self.gameState.getLegalActions(self.index)
-            action = random.choice(actions)
+        #print("index is: ", self.index)
+        #print("gameState is: ", self.gameState)
+        #print("indices are: ", self.gameState.getRedTeamIndices(), self.gameState.getBlueTeamIndices())
+        
+        #if self.gameState.getAgentPosition( self.index ) is None:
+        #    action = Directions.STOP
+        #    print("Program ran here.")
+        #else:
+        actions = self.gameState.getLegalActions(self.index)
+        action = random.choice(actions)
 
         nextState = self.gameState.generateSuccessor(self.index, action)
-        newIndex = (self.index + 1) % 4
-        successor = MCNode(nextState, self, action, newIndex)
+        #newIndex = (self.index + 1) % 4
+        newIndex = self.getNextAgentIndex()
+        successor = MCNode(nextState, self, action, newIndex, self.visibleAgentIndices)
 
             # while not self.children.__contains__(successor):
             #    action = random.choice(self.gameState.getLegalActions(self.index))
             #    nextState = self.gameState.generateSuccessor(self.index, action)
             #    successor = MCNode(nextState, nextState.getIndex(), action)
         return successor
+    
+    def getNextAgentIndex(self):
+        listIndex = self.visibleAgentIndices.index(self.index)
+        listIndex = (listIndex + 1) % len(self.visibleAgentIndices)
+        nextAgentIndex = self.visibleAgentIndices[listIndex]
+        return nextAgentIndex
+
 
 
 def MCTS(node):
     start = time.time()
-    while 0.5 > (time.time() - start):  # modified
-        print("Node is: ", node)
+    while 1 > (time.time() - start):  # modified
         leaf = search(node)
-        if leaf is None:
+        #if leaf is None:
             # TODO continue search? move towards closest dot?
-            print("Leaf is None")
-            return random.choice(node.gameState.getLegalActions(node.index))
+            #print("Leaf is None")
+        #    return random.choice(node.gameState.getLegalActions(node.index))
         simNode = expand(leaf)
-        # something = simNode
-        # print(something.numWins, something.numGames, something.parent, something.action)
         resultScore = rollout(simNode)
-        # print(resultScore)
         backpropagate(simNode, resultScore)
 
     bestChild = best_child(node)
@@ -302,14 +325,15 @@ def best_child(node):
             maxVisits = child.numGames  # added
             bestChild = child  # added
 
-    print( "\n===============")
-    print( "RETURNING BEST CHILD: ",  bestChild, "\n")
+    #print( "\n===============")
+    #print( "RETURNING BEST CHILD: ",  bestChild, "\n")
     return bestChild
 
 
 def search(node):
     currentNode = node
-    while currentNode is not None and currentNode.isFullyExpanded():
+    #while currentNode is not None and currentNode.isFullyExpanded():
+    while currentNode.isFullyExpanded():
         currentNode = currentNode.getNodeWithBestUCT()
 
 
@@ -317,13 +341,15 @@ def search(node):
 
 
 def expand(node):  # added
+    #print(node.gameState.getAgentState(node.index))
     actions = node.getUnusedActions()
-    print(actions)
+    #print(actions)
     chosenAction = random.choice(actions)
     nextState = node.gameState.generateSuccessor(node.index, chosenAction)
 
-    newIndex = ( node.index + 1 ) % 4
-    chosenChild = MCNode(nextState, node, chosenAction, newIndex)  # change this to enemy index
+    #newIndex = ( node.index + 1 ) % 4
+    newIndex = node.getNextAgentIndex()
+    chosenChild = MCNode(nextState, node, chosenAction, newIndex, node.visibleAgentIndices)
     node.children.append(chosenChild)
 
     return chosenChild
@@ -335,19 +361,40 @@ def rollout(node):
     currentNode = node
     for i in range(100):
         currentNode = rollout_policy(currentNode)
-        print(i, currentNode.index)
-        #i+=1
+        
     #while not currentNode.isTerminal():
     #    currentNode = rollout_policy(currentNode)
+    
+    """
+    terminal = False
+    pelletEaten = False
+    while not terminal:
+        firstAgentIndex = currentNode.visibleAgentIndices[0]
+        if currentNode.index == firstAgentIndex:
+            prevPellets = currentNode.gameState.getAgentState(firstAgentIndex).numCarrying
+            currentNode = rollout_policy(currentNode)
+            currPellets = currentNode.gameState.getAgentState(firstAgentIndex).numCarrying
+            if currPellets - prevPellets == 1:
+                terminal = True
+                pelletEaten = True
+        else:
+            currentNode = rollout_policy(currentNode)
+    if pelletEaten:
+        return 1.0
+    else:
+        return 0.0
+    """
+
     #return node.evaluate(currentNode)
     return currentNode.gameState.getScore()
 
+
 def rollout_policy(node):
-    if node.gameState.getAgentPosition(node.index) is None:
-        newNode = MCNode( node.gameState, node, Directions.STOP, (node.index + 1) % 4) # does the action matter?
-        return newNode
-    else:
-        return node.generateSuccessor()
+    #if node.gameState.getAgentPosition(node.index) is None:
+    #    newNode = MCNode( node.gameState, node, Directions.STOP, (node.index + 1) % 4) # does the action matter?
+    #    return newNode
+    #else:
+    return node.generateSuccessor()
     #return node.generateSuccessor()
 
 
