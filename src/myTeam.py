@@ -113,12 +113,16 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
 
     def chooseAction(self, gameState):
         agentState = gameState.getAgentState(self.index)
+        visibleIndices = self.getVisibleEnemyIndices(gameState)
 
         # just move towards closest food while in base
         # TODO: Could add a clause to if theres a ghost within ~3 tiles,
         #   chase it down?
         if not agentState.isPacman:
             currentPos = gameState.getAgentPosition(self.index)
+
+
+
             foodList = self.getFood(gameState).asList()
             closestFoodPos = None
             minFoodDist = 1000000
@@ -138,7 +142,31 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
                     minDist = dist
                     chosenAction = action
 
-        # if on enemy's side, do MCTS
+            # get closest ghost, if they're within 3 units, chase them.
+            #   if and ugly repition to override above beeline to enemy side, iff theres a nearby enemy
+            closestGhostPos = None
+            closestGhostDist = 999999
+            if len(visibleIndices) > 0:
+                for enemyIndex in visibleIndices:
+                    currEnemyPos = gameState.getAgentPosition(enemyIndex)
+                    currEnemyDist = self.getMazeDistance(currentPos, currEnemyPos)
+                    if currEnemyDist < closestGhostDist:
+                        closestGhostPos = currEnemyPos
+                        closestGhostDist = currEnemyDist
+
+                if closestGhostDist < 3:
+                    chosenAction = None
+                    minDist = 999999
+                    actions = gameState.getLegalActions(self.index)
+                    for action in actions:
+                        nextPos = gameState.generateSuccessor(self.index, action).getAgentPosition(self.index)
+                        dist = self.getMazeDistance(nextPos, closestGhostPos)
+                        if dist < minDist:
+                            minDist = dist
+                            chosenAction = action
+
+
+                # if on enemy's side, do MCTS
         else:
             visibleIndices = self.getVisibleEnemyIndices(gameState)
             visibleIndices.insert(0, self.index) #add teammates or no?
@@ -156,6 +184,10 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
         # base of this algorithm taken from Jeremy's initial one
         foodList = self.getFood(gameState).asList()
         closestFoodPos = None
+
+        # return home to get score of at least 1, put timer scamming on the table
+        if self.getScore(gameState) < 1 and gameState.getAgentState( self.index ).numCarrying > 0:
+            return self.returnHomeAlgo(gameState)
 
         # check how many total pellets left
         # if there's only 2 left or less, head home
