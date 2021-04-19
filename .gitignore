@@ -5,3 +5,4 @@ venv/
 .flooignore
 .floo
 workspace.xml
+*.pyc

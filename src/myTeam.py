@@ -115,6 +115,8 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
         agentState = gameState.getAgentState(self.index)
 
         # just move towards closest food while in base
+        # TODO: Could add a clause to if theres a ghost within ~3 tiles,
+        #   chase it down?
         if not agentState.isPacman:
             currentPos = gameState.getAgentPosition(self.index)
             foodList = self.getFood(gameState).asList()
@@ -140,10 +142,75 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
         else:
             visibleIndices = self.getVisibleEnemyIndices(gameState)
             visibleIndices.insert(0, self.index) #add teammates or no?
+            # if you see a ghost, do MCTS to avoid dying i guess
+            if len(visibleIndices) > 1:
+                root = MCNode(gameState, None, None, self.index, visibleIndices, self) #add self to get maze distance
+                chosenAction = MCTS(root)
+            # otherwise, bad information, fall back on rudimentary algorithm
+            else:
+                chosenAction = self.backupAlgorithm(gameState)
 
-            root = MCNode(gameState, None, None, self.index, visibleIndices)
-            chosenAction = MCTS(root)
+        return chosenAction
 
+    def backupAlgorithm(self, gameState):
+        # base of this algorithm taken from Jeremy's initial one
+        foodList = self.getFood(gameState).asList()
+        closestFoodPos = None
+
+        # check how many total pellets left
+        # if there's only 2 left or less, head home
+        if len(foodList) < 3:
+            return self.returnHomeAlgo(gameState)
+
+        # check how many pellets you have #TODO: Change back to 4 or 5
+        if gameState.getAgentState( self.index ).numCarrying > 4:
+            return self.returnHomeAlgo(gameState)
+
+        # otherwise head towards closest food
+        agentPosn = gameState.getAgentPosition(self.index)
+        closestFoodPos = None
+        closestFoodDist = 1000000
+        for fPosn in foodList:
+            thisFoodDist = self.getMazeDistance(agentPosn, fPosn)
+            if thisFoodDist < closestFoodDist:
+                closestFoodDist = thisFoodDist
+                closestFoodPos = fPosn
+
+        chosenAction = None
+        minDist = 1000000
+        actions = gameState.getLegalActions(self.index)
+        for action in actions:
+            nextPos = gameState.generateSuccessor(self.index, action).getAgentPosition(self.index)
+            dist = self.getMazeDistance(nextPos, closestFoodPos)
+            if dist < minDist:
+                minDist = dist
+                chosenAction = action
+
+        return chosenAction
+
+    # makes a beeline home, trying not to get killed
+    def returnHomeAlgo(self, gameState):
+        print("running return home")
+        agentPosn = gameState.getAgentPosition(self.index)
+        friendlyFoodList = self.getFoodYouAreDefending( gameState ).asList()
+        closestFoodPosn = None
+        closestFoodDist = 100000
+        for fPosn in friendlyFoodList:
+            thisFoodDist = self.getMazeDistance(agentPosn, fPosn)
+            if thisFoodDist < closestFoodDist:
+                closestFoodDist = thisFoodDist
+                closestFoodPosn = fPosn
+
+        chosenAction = None
+        minDist = 100000
+        actions = gameState.getLegalActions(self.index)
+
+        for action in actions:
+            nextPos = gameState.generateSuccessor(self.index, action).getAgentPosition(self.index)
+            dist = self.getMazeDistance(nextPos, closestFoodPosn)
+            if dist < minDist:
+                minDist = dist
+                chosenAction = action
 
         return chosenAction
 
@@ -185,7 +252,7 @@ class DefensiveReflexAgent(ReflexCaptureAgent):
             weights = self.getWeights(gameState, action)
             return features * weights
 
-        mctsNode = MCTS(MCNode(gameState, self.index, None, evaluate))
+        mctsNode = MCTS(MCNode(gameState, self.index, None, evaluate, self))
         return mctsNode.action
         # return random.choice(actions)
 
@@ -198,16 +265,18 @@ Class to represent the Monte Carlo Tree Node and its children
 
 
 class MCNode():
-    def __init__(self, gameState, parent, action, index, visibleAgentIndices):
+    def __init__(self, gameState, parent, action, index, visibleAgentIndices, agent):
         # self.numWins = 0
         self.avgScore = 0.0
+        self.avgEval = 0.0
         self.numGames = 0
         self.gameState = gameState
         self.parent = parent
         self.children = list()  # list of MCNodes
         # self.isEnemy = False
-        self.index = index
+        self.index = index  # index of this agent
         self.action = action
+        self.agentForMazeDist = agent #legit it doesn't matter WHAT agent it is, but agent has helpful methods for an eval
         # self.evaluate = evaluate
         self.visibleAgentIndices = visibleAgentIndices
 
@@ -215,6 +284,10 @@ class MCNode():
         if len(self.children) == 0:  # added
             return False  # added
 
+        if len(self.getUnusedActions()) > 0:
+            return False
+
+        # TODO: We only add 1 child, and then it's been expanded
         for child in self.children:
             if not child.visited():
                 return False
@@ -229,26 +302,31 @@ class MCNode():
         #isInvisible = self.gameState.getAgentPosition( nextIndex ) is None
         #if isInvisible:
         #    return None
-
+        # print("finding best")
         chosenNode = None
         maxUCT = -1000000
         for child in self.children:
+            # print(len(self.children))
             if child.getUCT() > maxUCT:
                 maxUCT = child.getUCT()
                 chosenNode = child
+        # print("best was: ", maxUCT)
 
         return chosenNode
 
     def getUCT(self):
         exploreParam = math.sqrt(2)
-        # TODO: how to use avgScore instead of numWins in this formula
-        return self.avgScore * self.numGames + exploreParam * math.sqrt(math.log(self.parent.numGames) / self.numGames)
+        # TODO: how to use avgEval instead of numWins in this formula - lol just toss it in!
+        uctVal = self.avgEval + exploreParam * math.sqrt(math.log(self.parent.numGames) / self.numGames)
+        # print(uctVal)
+        return uctVal
 
     def hasChildren(self):
         return len(self.children) != 0
 
     def getUnusedActions(self):
         actions = self.gameState.getLegalActions(self.index)
+        actions.remove(Directions.STOP)
         for child in self.children:
             if child.action in actions:
                 actions.remove(child.action)
@@ -256,30 +334,13 @@ class MCNode():
         return actions
 
     def generateSuccessor(self):
-        #if self.isFullyExpanded():
-        #    print("Program shouldn't reach here")
-        #    return random.choice(self.children)
-        #else:
-        #print("index is: ", self.index)
-        #print("gameState is: ", self.gameState)
-        #print("indices are: ", self.gameState.getRedTeamIndices(), self.gameState.getBlueTeamIndices())
-        
-        #if self.gameState.getAgentPosition( self.index ) is None:
-        #    action = Directions.STOP
-        #    print("Program ran here.")
-        #else:
         actions = self.gameState.getLegalActions(self.index)
         action = random.choice(actions)
 
         nextState = self.gameState.generateSuccessor(self.index, action)
-        #newIndex = (self.index + 1) % 4
         newIndex = self.getNextAgentIndex()
-        successor = MCNode(nextState, self, action, newIndex, self.visibleAgentIndices)
+        successor = MCNode(nextState, self, action, newIndex, self.visibleAgentIndices, self.agentForMazeDist)
 
-            # while not self.children.__contains__(successor):
-            #    action = random.choice(self.gameState.getLegalActions(self.index))
-            #    nextState = self.gameState.generateSuccessor(self.index, action)
-            #    successor = MCNode(nextState, nextState.getIndex(), action)
         return successor
     
     def getNextAgentIndex(self):
@@ -289,50 +350,84 @@ class MCNode():
         return nextAgentIndex
 
 
+    def getFoodToEat(self):
+        if self.gameState.isOnRedTeam(self.index):
+            foodToEat = self.gameState.getBlueFood()
+        else:
+            foodToEat = self.gameState.getRedFood()
+
+        # print(foodToEat)
+        return foodToEat.asList()
+        # return util.matrixAsList(foodToEat)
+        # return foodToEat.asList()
+
+
+    def evalState(self):
+
+        # GET DIST TO CLOSEST EATABLE PELLET
+        # eatableFood = self.agentForMazeDist.getFood()
+        agentPosn = self.gameState.getAgentPosition(self.index)
+        foodPosns = self.getFoodToEat()
+        closestFood = 999
+        for fPosn in foodPosns:
+            thisFoodDist = self.agentForMazeDist.getMazeDistance( agentPosn, fPosn )
+            if thisFoodDist < closestFood:
+                closestFood = thisFoodDist
+        # now have closest food to use in weighting too
+
+        # GET DIST TO CLOSEST GHOST
+        enemyIndices = self.visibleAgentIndices
+        closestDist = 999 #sentinel to be able to ignore
+        for ind in enemyIndices:
+            thisEnemyPosn = self.gameState.getAgentPosition(ind)
+            thisDist = self.agentForMazeDist.getMazeDistance( agentPosn, thisEnemyPosn )
+            if thisDist < closestDist:
+                closestDist = thisDist
+        closestDistScore = 0 #if we can't see any enemys, don't factor in running away
+        if closestDist < 3: #if theres an enemy within some arbitrary distance
+            closestDistScore = closestDist
+
+        return (( 10 / (closestFood + 1) ) * 10) + closestDistScore * -5
+
+
 
 def MCTS(node):
     start = time.time()
-    while 1 > (time.time() - start):  # modified
-        leaf = search(node)
-        #if leaf is None:
-            # TODO continue search? move towards closest dot?
-            #print("Leaf is None")
-        #    return random.choice(node.gameState.getLegalActions(node.index))
-        simNode = expand(leaf)
-        resultScore = rollout(simNode)
+    while 0.8 > (time.time() - start):  # modified
+        leaf = search(node) # run search to the find the next candidate to expand
+        simNode = expand(leaf) # expand the candidate, add to its children, return child
+        resultScore = rollout(simNode) # run rollout on child of candidate
         backpropagate(simNode, resultScore)
 
     bestChild = best_child(node)
     print("BEST ACTION IS: ", bestChild.action)
     return bestChild.action
-    # return None
 
 
 def best_child(node):
     isRed = node.gameState.isOnRedTeam( node.index )
 
-
-    # maxWinrate = 0
     maxVisits = -1000000  # added
+    bestAvgEval = -100000
     bestChild = None
     for child in node.children:
-        # winrate = child.numWins / child.numGames
-        # if winrate > maxWinrate:
-        #    maxWinrate = winrate
-        #    bestChild = child
+        print("Child with avgEval: ", child.avgEval)
+        print("  direction ", child.action)
+        # if child.numGames > maxVisits:  # added
+        #     maxVisits = child.numGames  # added
+        #     bestChild = child  # added
 
-        if child.numGames > maxVisits:  # added
-            maxVisits = child.numGames  # added
+        if child.avgEval > bestAvgEval:  # added
+            bestAvgEval = child.avgEval  # added
             bestChild = child  # added
 
-    #print( "\n===============")
-    #print( "RETURNING BEST CHILD: ",  bestChild, "\n")
     return bestChild
 
 
 def search(node):
     currentNode = node
-    #while currentNode is not None and currentNode.isFullyExpanded():
+    # print( "line 390: num children ", len(currentNode.children) )
+    # print( "line 391: isFullyExpanded", currentNode.isFullyExpanded())
     while currentNode.isFullyExpanded():
         currentNode = currentNode.getNodeWithBestUCT()
 
@@ -341,16 +436,15 @@ def search(node):
 
 
 def expand(node):  # added
-    #print(node.gameState.getAgentState(node.index))
     actions = node.getUnusedActions()
-    #print(actions)
     chosenAction = random.choice(actions)
     nextState = node.gameState.generateSuccessor(node.index, chosenAction)
-
-    #newIndex = ( node.index + 1 ) % 4
     newIndex = node.getNextAgentIndex()
-    chosenChild = MCNode(nextState, node, chosenAction, newIndex, node.visibleAgentIndices)
+    chosenChild = MCNode(nextState, node, chosenAction, newIndex, node.visibleAgentIndices, node.agentForMazeDist)
+    # print("on line 404: Pre append index", node.index)
+    # print("on line 405: Pre append length", len(node.children))
     node.children.append(chosenChild)
+    # print("on line 407: Post append length", len(node.children))
 
     return chosenChild
 
@@ -359,11 +453,9 @@ def expand(node):  # added
 def rollout(node):
     # potentially add depth parameter if time is an issue
     currentNode = node
-    for i in range(100):
+    for i in range(20):
         currentNode = rollout_policy(currentNode)
-        
-    #while not currentNode.isTerminal():
-    #    currentNode = rollout_policy(currentNode)
+
     
     """
     terminal = False
@@ -386,26 +478,25 @@ def rollout(node):
     """
 
     #return node.evaluate(currentNode)
-    return currentNode.gameState.getScore()
+    return currentNode.evalState()
+    # return currentNode.gameState.getScore()
 
 
 def rollout_policy(node):
-    #if node.gameState.getAgentPosition(node.index) is None:
-    #    newNode = MCNode( node.gameState, node, Directions.STOP, (node.index + 1) % 4) # does the action matter?
-    #    return newNode
-    #else:
     return node.generateSuccessor()
-    #return node.generateSuccessor()
 
 
 #
 def backpropagate(node, result):
     currentNode = node
     while currentNode is not None:
-        currSum = currentNode.avgScore * currentNode.numGames
-        newSum = currSum + result
+        # currSum = currentNode.avgScore * currentNode.numGames
+        # newSum = currSum + result
+        currEval = currentNode.avgEval * currentNode.numGames
+        newEval = currEval + result
         currentNode.numGames = currentNode.numGames + 1
-        currentNode.avgScore = newSum / currentNode.numGames
+        # currentNode.avgScore = newSum / currentNode.numGames
+        currentNode.avgEval = newEval / currentNode.numGames
 
         # set node to parent to keep looping
         currentNode = currentNode.parent
