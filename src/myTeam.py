@@ -26,7 +26,6 @@ import math
 
 def createTeam(firstIndex, secondIndex, isRed,
                first='OffensiveReflexAgent', second='OffensiveReflexAgent'):
-    #  first='DummyAgent', second='DummyAgent'):
     """
   This function should return a list of two agents that will form the
   team, initialized using firstIndex and secondIndex as their agent
@@ -94,23 +93,19 @@ class ReflexCaptureAgent(CaptureAgent):
     '''
         return random.choice(actions)
 
-    def evaluate(self, gameState, action):
-        """
-    Computes a linear combination of features and feature weights
-    """
-        features = self.getFeatures(gameState, action)
-        weights = self.getWeights(gameState, action)
-        return features * weights
 
-
+# the offensive agent that used both MCTS and greedy algorithm
 class OffensiveReflexAgent(ReflexCaptureAgent):
 
+    # initialize agent
     def __init__(self, index):
         CaptureAgent.__init__(self, index)
 
+    # initialize the state of the agent
     def registerInitialState(self, gameState):
         CaptureAgent.registerInitialState(self, gameState)
 
+    # choose the optimal action
     def chooseAction(self, gameState):
         agentState = gameState.getAgentState(self.index)
         visibleIndices = self.getVisibleEnemyIndices(gameState)
@@ -120,8 +115,6 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
         #   chase it down?
         if not agentState.isPacman:
             currentPos = gameState.getAgentPosition(self.index)
-
-
 
             foodList = self.getFood(gameState).asList()
             closestFoodPos = None
@@ -143,7 +136,7 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
                     chosenAction = action
 
             # get closest ghost, if they're within 3 units, chase them.
-            #   if and ugly repition to override above beeline to enemy side, iff theres a nearby enemy
+            #   if and ugly repetition to override above beeline to enemy side, iff theres a nearby enemy
             closestGhostPos = None
             closestGhostDist = 999999
             if len(visibleIndices) > 0:
@@ -166,7 +159,7 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
                             chosenAction = action
 
 
-                # if on enemy's side, do MCTS
+        # if on enemy's side, do MCTS
         else:
             visibleIndices = self.getVisibleEnemyIndices(gameState)
             visibleIndices.insert(0, self.index) #add teammates or no?
@@ -180,10 +173,10 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
 
         return chosenAction
 
+    # the greedy algorithm of getting the closest food and returning to base after collecting pellets
     def backupAlgorithm(self, gameState):
         # base of this algorithm taken from Jeremy's initial one
         foodList = self.getFood(gameState).asList()
-        closestFoodPos = None
 
         # return home to get score of at least 1, put timer scamming on the table
         if self.getScore(gameState) < 1 and gameState.getAgentState( self.index ).numCarrying > 0:
@@ -222,7 +215,6 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
 
     # makes a beeline home, trying not to get killed
     def returnHomeAlgo(self, gameState):
-        print("running return home")
         agentPosn = gameState.getAgentPosition(self.index)
         friendlyFoodList = self.getFoodYouAreDefending( gameState ).asList()
         closestFoodPosn = None
@@ -246,18 +238,7 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
 
         return chosenAction
 
-        # have if statements to override the monte-carlo's choice
-        """
-        def evaluate(MCNode):
-            features = self.getFeatures(gameState, action)
-            weights = self.getWeights(gameState, action)
-            return features * weights
-
-        mctsNode = MCTS( MCNode( gameState, self.index, None, evaluate))
-        return mctsNode.action
-        #return random.choice(actions)
-        """
-
+    # get the indices of enemy agents that are visible by our agents
     def getVisibleEnemyIndices(self, gameState):
         if gameState.isOnRedTeam(self.index):
             enemyIndices = gameState.getBlueTeamIndices()
@@ -272,90 +253,67 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
         return visibleEnemyIndices
 
 
-class DefensiveReflexAgent(ReflexCaptureAgent):
-
-    def registerInitialState(self, gameState):
-        CaptureAgent.registerInitialState(self, gameState)
-
-    def chooseAction(self, gameState):
-        # have if statements to override the monte-carlo's choice
-        def evaluate(MCNode):
-            features = self.getFeatures(gameState, action)
-            weights = self.getWeights(gameState, action)
-            return features * weights
-
-        mctsNode = MCTS(MCNode(gameState, self.index, None, evaluate, self))
-        return mctsNode.action
-        # return random.choice(actions)
-
-
-# https://www.geeksforgeeks.org/ml-monte-carlo-tree-search-mcts/
-# https://medium.com/@quasimik/implementing-monte-carlo-tree-search-in-node-js-5f07595104df
 '''
 Class to represent the Monte Carlo Tree Node and its children
 '''
 
-
+# the node used for the gamestate tree of MCTS
 class MCNode():
+
+    # initalize node
     def __init__(self, gameState, parent, action, index, visibleAgentIndices, agent):
-        # self.numWins = 0
         self.avgScore = 0.0
         self.avgEval = 0.0
         self.numGames = 0
         self.gameState = gameState
         self.parent = parent
         self.children = list()  # list of MCNodes
-        # self.isEnemy = False
         self.index = index  # index of this agent
         self.action = action
         self.agentForMazeDist = agent #legit it doesn't matter WHAT agent it is, but agent has helpful methods for an eval
-        # self.evaluate = evaluate
         self.visibleAgentIndices = visibleAgentIndices
 
+    # check if all the children of this node have been visited
     def isFullyExpanded(self):
-        if len(self.children) == 0:  # added
-            return False  # added
+        if len(self.children) == 0:
+            return False
 
         if len(self.getUnusedActions()) > 0:
             return False
 
-        # TODO: We only add 1 child, and then it's been expanded
         for child in self.children:
             if not child.visited():
                 return False
 
         return True
 
+    # check if a simulation has been run on this node
     def visited(self):
         return self.numGames > 0
 
+    # calculate the best UCT among the children of this node
     def getNodeWithBestUCT(self):
-        #nextIndex = (self.index + 1) % 4
-        #isInvisible = self.gameState.getAgentPosition( nextIndex ) is None
-        #if isInvisible:
-        #    return None
-        # print("finding best")
         chosenNode = None
         maxUCT = -1000000
         for child in self.children:
-            # print(len(self.children))
             if child.getUCT() > maxUCT:
                 maxUCT = child.getUCT()
                 chosenNode = child
-        # print("best was: ", maxUCT)
 
         return chosenNode
 
+    # calculate the UCT of this node
     def getUCT(self):
         exploreParam = math.sqrt(2)
-        # TODO: how to use avgEval instead of numWins in this formula - lol just toss it in!
         uctVal = self.avgEval + exploreParam * math.sqrt(math.log(self.parent.numGames) / self.numGames)
-        # print(uctVal)
+
         return uctVal
 
+    # check if this node has children
     def hasChildren(self):
         return len(self.children) != 0
 
+    # get the actions from this state that have not been done
     def getUnusedActions(self):
         actions = self.gameState.getLegalActions(self.index)
         actions.remove(Directions.STOP)
@@ -365,6 +323,7 @@ class MCNode():
 
         return actions
 
+    # get the next state from this node doing a random action
     def generateSuccessor(self):
         actions = self.gameState.getLegalActions(self.index)
         action = random.choice(actions)
@@ -374,26 +333,24 @@ class MCNode():
         successor = MCNode(nextState, self, action, newIndex, self.visibleAgentIndices, self.agentForMazeDist)
 
         return successor
-    
+
+    # get the next agent index, representing the child of this node
     def getNextAgentIndex(self):
         listIndex = self.visibleAgentIndices.index(self.index)
         listIndex = (listIndex + 1) % len(self.visibleAgentIndices)
         nextAgentIndex = self.visibleAgentIndices[listIndex]
         return nextAgentIndex
 
-
+    # get the food that the current agent is allowed to eat
     def getFoodToEat(self):
         if self.gameState.isOnRedTeam(self.index):
             foodToEat = self.gameState.getBlueFood()
         else:
             foodToEat = self.gameState.getRedFood()
 
-        # print(foodToEat)
         return foodToEat.asList()
-        # return util.matrixAsList(foodToEat)
-        # return foodToEat.asList()
 
-
+    # evaluation function for eating pellets and running away from ghosts
     def evalState(self):
 
         # GET DIST TO CLOSEST EATABLE PELLET
@@ -422,61 +379,45 @@ class MCNode():
         return (( 10 / (closestFood + 1) ) * 10) + closestDistScore * -5
 
 
-
+# run Monte Carlo Tree Search
 def MCTS(node):
     start = time.time()
-    while 0.8 > (time.time() - start):  # modified
+    while 0.8 > (time.time() - start):
         leaf = search(node) # run search to the find the next candidate to expand
         simNode = expand(leaf) # expand the candidate, add to its children, return child
         resultScore = rollout(simNode) # run rollout on child of candidate
         backpropagate(simNode, resultScore)
 
     bestChild = best_child(node)
-    print("BEST ACTION IS: ", bestChild.action)
     return bestChild.action
 
-
+# get the child of the given node with the greatest average score
 def best_child(node):
-    isRed = node.gameState.isOnRedTeam( node.index )
-
-    maxVisits = -1000000  # added
     bestAvgEval = -100000
     bestChild = None
     for child in node.children:
-        print("Child with avgEval: ", child.avgEval)
-        print("  direction ", child.action)
-        # if child.numGames > maxVisits:  # added
-        #     maxVisits = child.numGames  # added
-        #     bestChild = child  # added
-
-        if child.avgEval > bestAvgEval:  # added
-            bestAvgEval = child.avgEval  # added
-            bestChild = child  # added
+        if child.avgEval > bestAvgEval:
+            bestAvgEval = child.avgEval
+            bestChild = child
 
     return bestChild
 
-
+# choose a game state to expand and simulate on
 def search(node):
     currentNode = node
-    # print( "line 390: num children ", len(currentNode.children) )
-    # print( "line 391: isFullyExpanded", currentNode.isFullyExpanded())
     while currentNode.isFullyExpanded():
         currentNode = currentNode.getNodeWithBestUCT()
 
-
     return currentNode
 
-
-def expand(node):  # added
+# produce a child node for the given node
+def expand(node):
     actions = node.getUnusedActions()
     chosenAction = random.choice(actions)
     nextState = node.gameState.generateSuccessor(node.index, chosenAction)
     newIndex = node.getNextAgentIndex()
     chosenChild = MCNode(nextState, node, chosenAction, newIndex, node.visibleAgentIndices, node.agentForMazeDist)
-    # print("on line 404: Pre append index", node.index)
-    # print("on line 405: Pre append length", len(node.children))
     node.children.append(chosenChild)
-    # print("on line 407: Post append length", len(node.children))
 
     return chosenChild
 
@@ -488,46 +429,20 @@ def rollout(node):
     for i in range(20):
         currentNode = rollout_policy(currentNode)
 
-    
-    """
-    terminal = False
-    pelletEaten = False
-    while not terminal:
-        firstAgentIndex = currentNode.visibleAgentIndices[0]
-        if currentNode.index == firstAgentIndex:
-            prevPellets = currentNode.gameState.getAgentState(firstAgentIndex).numCarrying
-            currentNode = rollout_policy(currentNode)
-            currPellets = currentNode.gameState.getAgentState(firstAgentIndex).numCarrying
-            if currPellets - prevPellets == 1:
-                terminal = True
-                pelletEaten = True
-        else:
-            currentNode = rollout_policy(currentNode)
-    if pelletEaten:
-        return 1.0
-    else:
-        return 0.0
-    """
-
-    #return node.evaluate(currentNode)
     return currentNode.evalState()
-    # return currentNode.gameState.getScore()
 
-
+# do a simulation of random moves on the given node
 def rollout_policy(node):
     return node.generateSuccessor()
 
 
-#
+# update the average scores of all nodes from the given node to the root
 def backpropagate(node, result):
     currentNode = node
     while currentNode is not None:
-        # currSum = currentNode.avgScore * currentNode.numGames
-        # newSum = currSum + result
         currEval = currentNode.avgEval * currentNode.numGames
         newEval = currEval + result
         currentNode.numGames = currentNode.numGames + 1
-        # currentNode.avgScore = newSum / currentNode.numGames
         currentNode.avgEval = newEval / currentNode.numGames
 
         # set node to parent to keep looping
